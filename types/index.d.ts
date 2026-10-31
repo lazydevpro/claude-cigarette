@@ -10,6 +10,7 @@ declare module 'claude-code' {
       reading: Shaped<Reading | null>
       setup: Shaped<Setup>
       isWorking: boolean
+      cosmic: boolean
       hasOpened: boolean
       tick: number
     }

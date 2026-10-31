@@ -34,6 +34,8 @@ const setup = atom(
   { shape: 'setup-1' },
 )
 const isWorking = atom({ plugin: 'cigarette', key: 'isWorking' } as const, false)
+// An "ultrathink" turn: the smoke goes cosmic until the turn ends.
+const cosmic = atom({ plugin: 'cigarette', key: 'cosmic' } as const, false)
 // The pane opens by itself once per session; after that, /cigarette.
 const hasOpened = atom({ plugin: 'cigarette', key: 'hasOpened' } as const, false)
 // Rewritten every minute so the countdown redraws.
@@ -263,7 +265,15 @@ function footerArt(kind: Kind, shown: Scene, look: Look, isCompact: boolean): Pa
   const smoke = isBurning && !isCompact
     ? (kind === 'pipe' ? ['°', '°o', '°oO', 'o°oO', 'O°o°O'] : ['~', '∿', '∿∿', '∿∿∿', '∿∿∿∿'])[strength] ?? ''
     : ''
-  const puff: Part[] = smoke ? [{ text: ` ${smoke}`, color: '#9a9a9a' }] : []
+  const cosmicSmoke = ['✧', '✧✦', '✦✧✦', '✧✦✧✦', '✦✧✦✧✦'][strength] ?? '✦'
+  const puff: Part[] = !smoke
+    ? []
+    : look.mode === 'cosmic'
+      ? [{ text: ` ${cosmicSmoke}`, color: '#b79bff' }]
+      : [
+          { text: ` ${smoke}`, color: '#9a9a9a' },
+          ...(isInferno(look) ? [{ text: ' ⁂', color: '#ffb347' }] : []),
+        ]
   // The burning end is a sliver: a half-width quadrant, ember while lit,
   // tobacco while not.
   const tail: Part[] = [
@@ -305,15 +315,25 @@ function footerArt(kind: Kind, shown: Scene, look: Look, isCompact: boolean): Pa
   }
 }
 
+/** Max effort while Claude works: the drawing throws a shower of sparks. */
+function isInferno(look: Look): boolean {
+  return look.effort >= 4 && look.isWorking
+}
+
 function altText(kind: Kind, shown: Scene, look: Look, effort: string): string {
   const noun = NOUNS[kind]
   if (!shown.isLit) return `An unlit ${noun}`
   if (shown.isOut) return `A burnt-out ${noun}`
 
   const percent = Math.round(shown.burned * 100)
-  const working = look.isWorking ? ', smoking hard while Claude works' : ''
+  const working = isInferno(look)
+    ? ', throwing sparks while Claude works'
+    : look.isWorking
+      ? ', smoking hard while Claude works'
+      : ''
+  const egg = look.mode === 'cosmic' ? ', its smoke gone cosmic' : ''
 
-  return `A ${noun}, ${percent}% burned, at ${effort} effort${working}`
+  return `A ${noun}, ${percent}% burned, at ${effort} effort${working}${egg}`
 }
 
 // Everything a drawing needs, read so that a change to any of it redraws.
@@ -321,6 +341,7 @@ async function view($: EngineInterface) {
   const last = await read($, reading)
   const { model, effort } = await read($, setup)
   const working = await read($, isWorking)
+  const isCosmic = await read($, cosmic)
   await read($, tick)
   const shown = scene(last, await $.clock.now())
   const kind = kindOf(model)
@@ -331,9 +352,11 @@ async function view($: EngineInterface) {
     isWorking: working,
     effort: effortLevel(effort),
     tone: shown.tone,
+    mode: isCosmic ? 'cosmic' : 'normal',
     ...(shown.imprint ? { imprint: shown.imprint } : {}),
   }
-  const detail = `${family(model)}${capitalized(NOUNS[kind])} · ${effortName(effort)} effort`
+  const egg = isCosmic ? ' · ultrathink' : isInferno(look) ? ' · inferno' : ''
+  const detail = `${family(model)}${capitalized(NOUNS[kind])} · ${effortName(effort)} effort${egg}`
 
   return { shown, kind, look, alt: altText(kind, shown, look, effortName(effort)), detail }
 }
@@ -409,6 +432,13 @@ export const register: Register = on => {
     return yield* next(e)
   })
 
+  // The easter egg: ask Claude to ultrathink, and the smoke becomes a nebula for that turn.
+  on('prompt.submit', async ($, e, next) => {
+    if (!e.isMeta && /\bultrathink\b/i.test(e.text)) await update($, cosmic, () => true)
+
+    return next(e)
+  })
+
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) await update($, isWorking, () => true)
 
@@ -416,7 +446,10 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined) await update($, isWorking, () => false)
+    if (e.agentId === undefined) {
+      await update($, isWorking, () => false)
+      await update($, cosmic, () => false)
+    }
 
     return next(e)
   })

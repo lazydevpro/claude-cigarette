@@ -1,6 +1,6 @@
 {
   "name": "cigarette",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "5h burn: a smoke above your prompt that burns down as your 5-hour usage limit is used; the model picks the smoke, effort sets the heat",
   "author": { "name": "lazydevpro" },
   "types": "./types/index.d.ts"

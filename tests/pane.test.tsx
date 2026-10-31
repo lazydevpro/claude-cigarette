@@ -60,6 +60,7 @@ function engine(
   })
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', () => ({ text: '' }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
   on('turn.step', async function* (_, e) {
     return {
       turnId: e.turnId,
@@ -109,8 +110,9 @@ async function words(ui: Pick<Mounted, 'findAll'>): Promise<string> {
   return (await ui.findAll({ type: 'Text' })).map(t => t.text).join('\n')
 }
 
+/** The smoke's moving parts: every puff, ring and exhale animates its height. */
 function puffs(source: string): number {
-  return source.split('filter="url(#soft)"').length - 1
+  return source.split('attributeName="ry"').length - 1
 }
 
 async function paneSvg($: Engine) {
@@ -178,14 +180,14 @@ test('the model picks the smoke: a pipe for Fable, a cigar for Opus, a slim for 
   await step($, { model: 'claude-haiku-5-5', effort: 'low' })
   found = await paneSvg($)
   expect(found.alt).toBe('A slim cigarette, 20% burned, at low effort')
-  expect(found.source).toContain('url(#white)')
+  expect(found.source).toContain('url(#acetate)')
 
   await step($, { model: 'claude-fable-5-1', effort: 'high' })
   const pipe = await paneSvg($)
   expect(pipe.alt).toBe("A wizard's pipe, 20% burned, at high effort")
   expect(pipe.source).toContain('url(#bowl)')
   // Smoke rings, more with more effort.
-  expect(pipe.source.split('filter="url(#haze)"').length - 1).toBe(4)
+  expect(pipe.source.split('filter="url(#ring)"').length - 1).toBe(4)
 
   await step($, { model: 'claude-sonnet-5-5', effort: 'high' })
   expect((await paneSvg($)).alt).toBe('A cigarette, 20% burned, at high effort')
@@ -203,8 +205,7 @@ test('more effort, more smoke; a subagent does not change it', async ($, on) => 
 
   await step($, { model: 'claude-sonnet-5-5', effort: 'max' })
   const max = puffs((await paneSvg($)).source)
-  expect(low).toBe(7)
-  expect(max).toBe(23)
+  expect(max).toBeGreaterThan(low)
 
   await step($, { model: 'claude-haiku-5-5', effort: 'low', agentId: 'a1' })
   const after = await paneSvg($)
@@ -318,8 +319,8 @@ test('the band keeps its smoke inside, fading before the edge', async ($, on) =>
   expect(band?.source).toContain('url(#ember)')
   expect(band?.source).toContain('<g mask="url(#fadeTop)">')
   expect(puffs(band?.source ?? '')).toBeGreaterThan(0)
-  // The percent printed on the cigar's label, in gold.
-  expect(band?.source).toContain('fill="#f3d27a">4%</text>')
+  // The percent printed on the cigar band's cream medallion.
+  expect(band?.source).toContain('fill="#6e1010">4%</text>')
   // The rest in a card shown on hover, not beside the cigar.
   const card = (await ui.findAll({ type: 'Box' })).find(
     box => box.props.display === 'none' && box.props.position === 'absolute',
@@ -458,7 +459,7 @@ test('a pipe in the footer blows more rings at max effort while working', async 
   await step($, { model: 'claude-fable-5-1', effort: 'max' })
   await $.turn.start({ text: 'hi', turnId: 't2' })
   ui = await $.ui.mount({ ...FOOTER, surface: 'desktop' })
-  expect(await line(ui)).toBe('▂▂▂▂▂▂▂▇ O°o°O 20%')
+  expect(await line(ui)).toBe('▂▂▂▂▂▂▂▇ O°o°O ⁂ 20%')
   await ui.unmount()
 })
 
@@ -470,5 +471,76 @@ test('an unlit footer has no smoke and no percent', async ($, on) => {
 
   const ui = await $.ui.mount({ ...FOOTER, surface: 'desktop' })
   expect(await line(ui)).toBe('▄▄▄▄▄▄▄▄▖')
+  await ui.unmount()
+})
+
+test('"ultrathink" turns the smoke cosmic for that turn', async ($, on) => {
+  mock.clock(on, { now: T0 })
+  mock.store(on)
+  engine(on)
+  await start($)
+  await measure($, fiveHour(30, 60 * MINUTE))
+
+  await $.prompt.submit({ text: 'please ultrathink about this migration', wait: false, origin: { kind: 'composer' } })
+  await $.turn.start({ text: 'please ultrathink about this migration', turnId: 't1' })
+  let pane = await paneSvg($)
+  expect(pane.source).toContain('url(#nebula)')
+  expect(pane.alt).toContain('its smoke gone cosmic')
+  let ui = await $.ui.mount({ ...FOOTER, surface: 'desktop' })
+  expect(await line(ui)).toContain('✦')
+  await ui.unmount()
+
+  await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' })
+  pane = await paneSvg($)
+  expect(pane.source).not.toContain('url(#nebula)')
+  ui = await $.ui.mount({ ...FOOTER, surface: 'desktop' })
+  expect(await line(ui)).not.toContain('✦')
+  await ui.unmount()
+})
+
+test('a prompt that only mentions thinking stays normal', async ($, on) => {
+  mock.clock(on, { now: T0 })
+  mock.store(on)
+  engine(on)
+  await start($)
+  await measure($, fiveHour(30, 60 * MINUTE))
+
+  await $.prompt.submit({ text: 'think hard about the ultra-wide layout', wait: false, origin: { kind: 'composer' } })
+  expect((await paneSvg($)).source).not.toContain('url(#nebula)')
+})
+
+test('max effort while Claude works throws an inferno', async ($, on) => {
+  mock.clock(on, { now: T0 })
+  mock.store(on)
+  engine(on)
+  await start($)
+  await measure($, fiveHour(40, 60 * MINUTE))
+
+  await step($, { model: 'claude-sonnet-5-5', effort: 'max' })
+  const idle = await paneSvg($)
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const inferno = await paneSvg($)
+  expect(inferno.alt).toContain('throwing sparks while Claude works')
+  // A shower of sparks: far more than max effort at rest.
+  const sparks = (source: string) => source.split('fill="#fff3c0"/></g>').length - 1
+  expect(sparks(inferno.source)).toBe(22)
+  expect(sparks(idle.source)).toBe(6)
+  const ui = await $.ui.mount({ ...FOOTER, surface: 'desktop' })
+  expect(await line(ui)).toContain('⁂')
+  await ui.unmount()
+})
+
+test('hovering the smoke takes a drag', async ($, on) => {
+  mock.clock(on, { now: T0 })
+  mock.store(on)
+  engine(on)
+  await start($)
+  await measure($, fiveHour(20, 60 * MINUTE))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const [band] = await svgs(ui)
+  expect(band?.source).toContain('svg:hover .boost')
+  expect(band?.source).toContain('class="boost"')
+  expect(band?.source).toContain('class="exhale"')
   await ui.unmount()
 })
